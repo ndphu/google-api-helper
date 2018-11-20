@@ -25,89 +25,103 @@ type DriveService struct {
 	Config  *jwt.Config
 }
 
-func GetDriveService(token []byte) *DriveService {
+func GetDriveService(token []byte) (*DriveService, error) {
 	config, err := google.JWTConfigFromJSON(token, drive.DriveScope)
-	FailOnError("Unable to parse client secret file to config", err)
+	if err != nil {
+		return nil, err
+	}
 	client := config.Client(oauth2.NoContext)
 	srv, err := drive.New(client)
-	FailOnError("Unable to retrieve Drive client", err)
+	if err != nil {
+		return nil, err
+	}
 	return &DriveService{
 		Service: srv,
 		Config:  config,
-	}
+	}, nil
 }
 
-func (d *DriveService) GetQuotaUsage() *Quota {
+func (d *DriveService) GetQuotaUsage() (*Quota, error) {
 	srv := d.Service
 	about, err := srv.About.Get().Fields("user,storageQuota").Do()
 	if err != nil {
-		FailOnError("Unable to retrieve About client", err)
+		return nil, err
 	}
 	return &Quota{
 		Limit:   about.StorageQuota.Limit,
 		Usage:   about.StorageQuota.Usage,
 		Percent: fmt.Sprintf("%.3f", float64(about.StorageQuota.Usage)*100/float64(about.StorageQuota.Limit)),
-	}
+	}, nil
 }
 
-func (d *DriveService) ListFiles(page int, size int64) []File {
-	if page < 1 {
-		FailOnError(fmt.Sprintf("Invalid page %d", page), nil)
-	}
-
+func (d *DriveService) ListFiles(page int, size int64) ([]File, error) {
 	if page == 1 {
 		return d.retrieveFiles("", size)
 	} else {
-		pageToken := d.getPageToken( page, size)
-		files := d.retrieveFiles(pageToken, size)
-		return files
+		pageToken, err  := d.getPageToken(page, size)
+		if err != nil {
+			return nil, err
+		}
+		return d.retrieveFiles(pageToken, size)
 	}
 
 }
 
-func (d *DriveService) getPageToken(page int, size int64) string {
+func (d *DriveService) getPageToken(page int, size int64) (string, error) {
 	srv := d.Service
 	call := srv.Files.List().PageSize(size)
 	pageToken := ""
 	for cp := 1; cp < page; cp ++ {
 		token, err := call.Fields("nextPageToken").PageToken(pageToken).Do()
-		FailOnError("Fail to get next page", err)
+		if err != nil {
+			return "", err
+		}
 		pageToken = token.NextPageToken
 	}
-	return pageToken
+	return pageToken, nil
 }
 
-func (d *DriveService) retrieveFiles(pageToken string, size int64) []File {
+func (d *DriveService) retrieveFiles(pageToken string, size int64) ([]File, error) {
 	srv := d.Service
 	call := srv.Files.List().PageSize(size)
 	r, err := call.PageToken(pageToken).Fields("files(id, name, size)").Do()
-	FailOnError("Fail to list file", err)
+	//FailOnError("Fail to list file", err)
+	if err != nil {
+		return nil, err
+	}
 	files := make([]File, len(r.Files))
 	for i, file := range r.Files {
 		files[i] = File{
 			Id:   file.Id,
 			Name: file.Name,
-			Size: size,
+			Size: file.Size,
 		}
 	}
-	return files
+	return files, nil
 }
 
-func (d *DriveService) DeleteAllFiles() {
+func (d *DriveService) DeleteAllFiles() (error) {
 	srv := d.Service
 	r, err := srv.Files.List().Fields("files(id, name)").Do()
 
 	if err != nil {
-		FailOnError("Fail to list file", err)
+		return err
 	}
+
 	for _, file := range r.Files {
-		srv.Files.Delete(file.Id).Do()
+		err := srv.Files.Delete(file.Id).Do()
+		if err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func (d *DriveService) GetDownloadLink(fileId string) string {
+func (d *DriveService) GetDownloadLink(fileId string) (string, error) {
 	accessToken, err:=d.Config.TokenSource(oauth2.NoContext).Token()
-	FailOnError("Fail to get access token", err)
+	if err != nil {
+		return "", err
+	}
 	return fmt.Sprintf("https://www.googleapis.com/drive/v3/files/%s?alt=media&prettyPrint=false&access_token=%s",
-		fileId, accessToken.AccessToken)
+		fileId, accessToken.AccessToken), nil
 }
