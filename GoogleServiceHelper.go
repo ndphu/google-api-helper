@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"golang.org/x/oauth2/jwt"
 	"google.golang.org/api/drive/v3"
-	"io/ioutil"
 )
 
 type Quota struct {
@@ -17,25 +17,28 @@ type Quota struct {
 type File struct {
 	Id   string `json:"id"`
 	Name string `json:"name"`
-	Size int64 `json:"size"`
+	Size int64  `json:"size"`
 }
 
-func InitGoogleDriveServiceFromFile(path string) (*drive.Service) {
-	b, err := ioutil.ReadFile(path)
-	FailOnError("Unable to read client secret file", err)
-	return InitGoogleDriveService(b, drive.DriveScope)
+type DriveService struct {
+	Service *drive.Service
+	Config  *jwt.Config
 }
 
-func InitGoogleDriveService(token []byte, scope string) (*drive.Service) {
-	config, err := google.JWTConfigFromJSON(token, scope)
+func GetDriveService(token []byte) *DriveService {
+	config, err := google.JWTConfigFromJSON(token, drive.DriveScope)
 	FailOnError("Unable to parse client secret file to config", err)
 	client := config.Client(oauth2.NoContext)
 	srv, err := drive.New(client)
 	FailOnError("Unable to retrieve Drive client", err)
-	return srv
+	return &DriveService{
+		Service: srv,
+		Config:  config,
+	}
 }
 
-func GetQuotaUsage(srv *drive.Service) *Quota {
+func (d *DriveService) GetQuotaUsage() *Quota {
+	srv := d.Service
 	about, err := srv.About.Get().Fields("user,storageQuota").Do()
 	if err != nil {
 		FailOnError("Unable to retrieve About client", err)
@@ -47,22 +50,23 @@ func GetQuotaUsage(srv *drive.Service) *Quota {
 	}
 }
 
-func ListFiles(srv *drive.Service, page int, size int64) []File {
+func (d *DriveService) ListFiles(page int, size int64) []File {
 	if page < 1 {
 		FailOnError(fmt.Sprintf("Invalid page %d", page), nil)
 	}
 
 	if page == 1 {
-		return retrieveFiles(srv, "", size)
+		return d.retrieveFiles("", size)
 	} else {
-		pageToken := getPageToken(srv, page, size)
-		files := retrieveFiles(srv, pageToken, size)
+		pageToken := d.getPageToken( page, size)
+		files := d.retrieveFiles(pageToken, size)
 		return files
 	}
 
 }
 
-func getPageToken(srv *drive.Service, page int, size int64) string {
+func (d *DriveService) getPageToken(page int, size int64) string {
+	srv := d.Service
 	call := srv.Files.List().PageSize(size)
 	pageToken := ""
 	for cp := 1; cp < page; cp ++ {
@@ -73,7 +77,8 @@ func getPageToken(srv *drive.Service, page int, size int64) string {
 	return pageToken
 }
 
-func retrieveFiles(srv *drive.Service, pageToken string, size int64) []File {
+func (d *DriveService) retrieveFiles(pageToken string, size int64) []File {
+	srv := d.Service
 	call := srv.Files.List().PageSize(size)
 	r, err := call.PageToken(pageToken).Fields("files(id, name, size)").Do()
 	FailOnError("Fail to list file", err)
@@ -88,7 +93,8 @@ func retrieveFiles(srv *drive.Service, pageToken string, size int64) []File {
 	return files
 }
 
-func DeleteAllFiles(srv *drive.Service) {
+func (d *DriveService) DeleteAllFiles() {
+	srv := d.Service
 	r, err := srv.Files.List().Fields("files(id, name)").Do()
 
 	if err != nil {
@@ -97,4 +103,11 @@ func DeleteAllFiles(srv *drive.Service) {
 	for _, file := range r.Files {
 		srv.Files.Delete(file.Id).Do()
 	}
+}
+
+func (d *DriveService) GetDownloadLink(fileId string) string {
+	accessToken, err:=d.Config.TokenSource(oauth2.NoContext).Token()
+	FailOnError("Fail to get access token", err)
+	return fmt.Sprintf("https://www.googleapis.com/drive/v3/files/%s?alt=media&prettyPrint=false&access_token=%s",
+		fileId, accessToken.AccessToken)
 }
