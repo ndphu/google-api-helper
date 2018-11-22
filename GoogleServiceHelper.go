@@ -6,6 +6,8 @@ import (
 	"golang.org/x/oauth2/google"
 	"golang.org/x/oauth2/jwt"
 	"google.golang.org/api/drive/v3"
+	"log"
+	"os"
 )
 
 type Quota struct {
@@ -124,4 +126,15 @@ func (d *DriveService) GetDownloadLink(fileId string) (string, error) {
 	}
 	return fmt.Sprintf("https://www.googleapis.com/drive/v3/files/%s?alt=media&prettyPrint=false&access_token=%s",
 		fileId, accessToken.AccessToken), nil
+}
+
+
+func (d *DriveService)UploadFile(name string, description string, mimeType string, localPath string) (*drive.File, error) {
+	localFile, err := os.Open(localPath)
+	if err != nil {
+		log.Fatalf("error opening %q: %v", name, err)
+	}
+	defer localFile.Close()
+	f := &drive.File{Name: name, Description: description, MimeType: mimeType}
+	return d.Service.Files.Create(f).Media(localFile).Do()
 }
