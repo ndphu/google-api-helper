@@ -6,6 +6,9 @@ import (
 	"golang.org/x/oauth2/google"
 	"golang.org/x/oauth2/jwt"
 	"google.golang.org/api/drive/v3"
+	"net/http"
+	"net/url"
+	"errors"
 )
 
 type Quota struct {
@@ -24,6 +27,8 @@ type DriveService struct {
 	Service *drive.Service
 	Config  *jwt.Config
 }
+
+var RedirectAttemptedError = errors.New("redirect")
 
 func GetDriveService(token []byte) (*DriveService, error) {
 	config, err := google.JWTConfigFromJSON(token, drive.DriveScope)
@@ -58,7 +63,7 @@ func (d *DriveService) ListFiles(page int, size int64) ([]File, error) {
 	if page == 1 {
 		return d.retrieveFiles("", size)
 	} else {
-		pageToken, err  := d.getPageToken(page, size)
+		pageToken, err := d.getPageToken(page, size)
 		if err != nil {
 			return nil, err
 		}
@@ -118,10 +123,28 @@ func (d *DriveService) DeleteAllFiles() (error) {
 }
 
 func (d *DriveService) GetDownloadLink(fileId string) (string, error) {
-	accessToken, err:=d.Config.TokenSource(oauth2.NoContext).Token()
+	accessToken, err := d.Config.TokenSource(oauth2.NoContext).Token()
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("https://www.googleapis.com/drive/v3/files/%s?alt=media&prettyPrint=false&access_token=%s",
-		fileId, accessToken.AccessToken), nil
+	fileUrl := fmt.Sprintf("https://www.googleapis.com/drive/v3/files/%s?alt=media&prettyPrint=false&access_token=%s",
+		fileId, accessToken.AccessToken)
+	fmt.Println("fileUrl", fileUrl)
+
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return RedirectAttemptedError
+		},
+	}
+
+	head, err := client.Head(fileUrl)
+	if urlError, ok := err.(*url.Error); ok && urlError.Err == RedirectAttemptedError{
+		err = nil
+	}
+
+	if err != nil {
+		return "", err
+	}
+
+	return head.Header.Get("Location"), nil
 }
