@@ -23,6 +23,7 @@ type File struct {
 	Id   string `json:"id"`
 	Name string `json:"name"`
 	Size int64  `json:"size"`
+	MimeType string `json:"mimeType"`
 }
 
 type DriveService struct {
@@ -91,7 +92,7 @@ func (d *DriveService) getPageToken(page int, size int64) (string, error) {
 func (d *DriveService) retrieveFiles(pageToken string, size int64) ([]File, error) {
 	srv := d.Service
 	call := srv.Files.List().PageSize(size)
-	r, err := call.PageToken(pageToken).Fields("files(id, name, size)").Do()
+	r, err := call.PageToken(pageToken).Fields("files(id, name, size, mimeType)").Do()
 	//FailOnError("Fail to list file", err)
 	if err != nil {
 		return nil, err
@@ -102,6 +103,7 @@ func (d *DriveService) retrieveFiles(pageToken string, size int64) ([]File, erro
 			Id:   file.Id,
 			Name: file.Name,
 			Size: file.Size,
+			MimeType: file.MimeType,
 		}
 	}
 	return files, nil
