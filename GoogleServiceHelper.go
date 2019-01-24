@@ -126,14 +126,17 @@ func (d *DriveService) DeleteAllFiles() (error) {
 	return nil
 }
 
-func (d *DriveService) GetDownloadLink(fileId string) (string, error) {
+func (d *DriveService) GetDownloadLink(fileId string) (*drive.File, string, error) {
+	file, err := d.Service.Files.Get(fileId).Fields("id, name, size, mimeType").Do()
+	if err != nil {
+		return nil, "", err
+	}
 	accessToken, err := d.Config.TokenSource(oauth2.NoContext).Token()
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
 	fileUrl := fmt.Sprintf("https://www.googleapis.com/drive/v3/files/%s?alt=media&prettyPrint=false&access_token=%s",
 		fileId, accessToken.AccessToken)
-	fmt.Println("fileUrl", fileUrl)
 
 	client := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -147,10 +150,10 @@ func (d *DriveService) GetDownloadLink(fileId string) (string, error) {
 	}
 
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
 
-	return head.Header.Get("Location"), nil
+	return file, head.Header.Get("Location"), nil
 }
 
 func (d *DriveService) UploadFile(name string, description string, mimeType string, localPath string) (*drive.File, error) {
@@ -161,4 +164,18 @@ func (d *DriveService) UploadFile(name string, description string, mimeType stri
 	defer localFile.Close()
 	f := &drive.File{Name: name, Description: description, MimeType: mimeType}
 	return d.Service.Files.Create(f).Media(localFile).Do()
+}
+func (d *DriveService) GetSharableLink(fileId string) (*drive.File, string, error) {
+	file, err := d.Service.Files.Get(fileId).Fields("id, name, size, mimeType").Do()
+	if err != nil {
+		return nil, "", err
+	}
+	accessToken, err := d.Config.TokenSource(oauth2.NoContext).Token()
+	if err != nil {
+		return nil, "", err
+	}
+	fileUrl := fmt.Sprintf("https://www.googleapis.com/drive/v3/files/%s?alt=media&access_token=%s",
+		fileId, accessToken.AccessToken)
+
+	return file, fileUrl, nil
 }
