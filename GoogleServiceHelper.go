@@ -166,16 +166,20 @@ func (d *DriveService) UploadFile(name string, description string, mimeType stri
 	return d.Service.Files.Create(f).Media(localFile).Do()
 }
 func (d *DriveService) GetSharableLink(fileId string) (*drive.File, string, error) {
+	perm := drive.Permission{
+		Type: "anyone",
+		Role: "reader",
+	}
+	_, err := d.Service.Permissions.Create(fileId, &perm).Do()
+	if err != nil {
+		return nil, "", err
+	}
+
 	file, err := d.Service.Files.Get(fileId).Fields("id, name, size, mimeType").Do()
 	if err != nil {
 		return nil, "", err
 	}
-	accessToken, err := d.Config.TokenSource(oauth2.NoContext).Token()
-	if err != nil {
-		return nil, "", err
-	}
-	fileUrl := fmt.Sprintf("https://www.googleapis.com/drive/v3/files/%s?alt=media&access_token=%s",
-		fileId, accessToken.AccessToken)
+	fileUrl := fmt.Sprintf("https://drive.google.com/file/d/%s/view", fileId)
 
 	return file, fileUrl, nil
 }
