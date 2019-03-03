@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"io"
 )
 
 type Quota struct {
@@ -165,6 +166,12 @@ func (d *DriveService) UploadFile(name string, description string, mimeType stri
 	f := &drive.File{Name: name, Description: description, MimeType: mimeType}
 	return d.Service.Files.Create(f).Media(localFile).Do()
 }
+
+func (d *DriveService) UploadFileFromStream(name string, description string, mimeType string, is io.Reader) (*drive.File, error) {
+	f := &drive.File{Name: name, Description: description, MimeType: mimeType}
+	return d.Service.Files.Create(f).Media(is).Do()
+}
+
 func (d *DriveService) GetSharableLink(fileId string) (*drive.File, string, error) {
 	perm := drive.Permission{
 		Type: "anyone",
