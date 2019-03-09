@@ -21,9 +21,9 @@ type Quota struct {
 }
 
 type File struct {
-	Id   string `json:"id"`
-	Name string `json:"name"`
-	Size int64  `json:"size"`
+	Id       string `json:"id"`
+	Name     string `json:"name"`
+	Size     int64  `json:"size"`
 	MimeType string `json:"mimeType"`
 }
 
@@ -101,9 +101,9 @@ func (d *DriveService) retrieveFiles(pageToken string, size int64) ([]File, erro
 	files := make([]File, len(r.Files))
 	for i, file := range r.Files {
 		files[i] = File{
-			Id:   file.Id,
-			Name: file.Name,
-			Size: file.Size,
+			Id:       file.Id,
+			Name:     file.Name,
+			Size:     file.Size,
 			MimeType: file.MimeType,
 		}
 	}
@@ -189,4 +189,12 @@ func (d *DriveService) GetSharableLink(fileId string) (*drive.File, string, erro
 	fileUrl := fmt.Sprintf("https://drive.google.com/file/d/%s/view", fileId)
 
 	return file, fileUrl, nil
+}
+
+func (d *DriveService) GetAccessToken() (string, error) {
+	token, err := d.Config.TokenSource(oauth2.NoContext).Token()
+	if err != nil {
+		return "", err
+	}
+	return token.AccessToken, nil
 }
