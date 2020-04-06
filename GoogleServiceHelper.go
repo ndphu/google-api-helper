@@ -7,11 +7,10 @@ import (
 	"golang.org/x/oauth2/google"
 	"golang.org/x/oauth2/jwt"
 	"google.golang.org/api/drive/v3"
-	"log"
-	"net/http"
-	"net/url"
-	"os"
 	"io"
+	"log"
+	"os"
+	"strings"
 )
 
 type Quota struct {
@@ -31,6 +30,14 @@ type DriveService struct {
 	Service *drive.Service
 	Config  *jwt.Config
 }
+
+type DownloadDetails struct {
+	Link string `json:"link"`
+	Token string `json:"token"`
+	UserAgent string `json:"userAgent"`
+	XApiClient string `json:"xApiClient"`
+}
+
 
 var RedirectAttemptedError = errors.New("redirect")
 
@@ -127,34 +134,26 @@ func (d *DriveService) DeleteAllFiles() (error) {
 	return nil
 }
 
-func (d *DriveService) GetDownloadLink(fileId string) (*drive.File, string, error) {
-	file, err := d.Service.Files.Get(fileId).Fields("id, name, size, mimeType").Do()
-	if err != nil {
-		return nil, "", err
-	}
-	accessToken, err := d.Config.TokenSource(oauth2.NoContext).Token()
-	if err != nil {
-		return nil, "", err
-	}
-	fileUrl := fmt.Sprintf("https://www.googleapis.com/drive/v3/files/%s?alt=media&prettyPrint=false&access_token=%s",
-		fileId, accessToken.AccessToken)
-
-	client := &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return RedirectAttemptedError
-		},
-	}
-
-	head, err := client.Head(fileUrl)
-	if urlError, ok := err.(*url.Error); ok && urlError.Err == RedirectAttemptedError {
-		err = nil
-	}
+func (d *DriveService) GetDownloadLink(fileId string) (*drive.File, *DownloadDetails, error) {
+	file, err := d.Service.Files.Get(fileId).Fields("id, name, size, mimeType, webContentLink, webViewLink, shared").Do()
 
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
+	res, err := d.Service.Files.Get(fileId).Download()
 
-	return file, head.Header.Get("Location"), nil
+	if err == nil {
+		log.Println(res.Request.URL.String(), res.Request.UserAgent())
+		log.Println(res.Request.Header)
+
+		defer res.Body.Close()
+	}
+	return file, &DownloadDetails{
+		Link: res.Request.URL.String(),
+		UserAgent: res.Request.UserAgent(),
+		Token: strings.TrimPrefix(res.Request.Header.Get("Authorization"), "Bearer "),
+		XApiClient: res.Request.Header.Get("X-Goog-Api-Client"),
+	}, nil
 }
 
 func (d *DriveService) UploadFile(name string, description string, mimeType string, localPath string) (*drive.File, error) {
